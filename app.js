@@ -64,12 +64,12 @@ const STREAM_QUALITY_QUERY = 'input[data-a-target="tw-radio"]';
 // ========================================== CONFIG SECTION =================================================================
 
 async function viewRandomPage(browser, page) {
-  var nextStreamerRefresh = dayjs().add(
+  let nextStreamerRefresh = dayjs().add(
     REFRESH_INTERVAL_VALUE,
     REFRESH_INTERVAL_UNIT
   );
 
-  var nextBrowserClean = dayjs().add(
+  let nextBrowserClean = dayjs().add(
     BROWSER_RESTART_TIME_VALUE,
     BROWSER_RESTART_TIME_UNIT
   );
@@ -119,7 +119,7 @@ async function viewRandomPage(browser, page) {
       await clickWhenExist(page, STREAM_QUALITY_SETTING_QUERY);
       await page.waitFor(STREAM_QUALITY_QUERY);
 
-      var resolution = await queryOnWebsite(page, STREAM_QUALITY_QUERY);
+      let resolution = await queryOnWebsite(page, STREAM_QUALITY_QUERY);
       resolution = resolution[resolution.length - 1].attribs.id;
       await page.evaluate((resolution) => {
         document.getElementById(resolution).click();
@@ -198,8 +198,8 @@ async function readLoginData() {
 async function spawnBrowser() {
   console.log("=========================");
   console.log("Launching browser...");
-  var browser = await puppeteer.launch(browserConfig);
-  var page = await browser.newPage();
+  let browser = await puppeteer.launch(browserConfig);
+  let page = await browser.newPage();
 
   console.log("Setting User-Agent...");
   await page.setUserAgent(USER_AGENT);
@@ -216,19 +216,16 @@ async function spawnBrowser() {
 
 async function getNewStreamers(page) {
   console.log("=========================");
-  await page.goto(STREAMERS_URL, {
-    waitUntil: "networkidle0",
-  });
+  await page.goto(STREAMERS_URL, { waitUntil: "networkidle0" });
   console.log("Checking login...");
   await checkLogin(page);
   console.log("Checking active streamers...");
-  await scroll(page, SCROLL_REPETITIONS);
+  await scroll(page);
   const jquery = await queryOnWebsite(page, CHANNELS_QUERY);
-  streamers = null;
   streamers = new Array();
 
-  console.log("🧹 Filtering out html codes...");
-  for (var i = 0; i < jquery.length; i++) {
+  console.log("Filtering out html codes...");
+  for (let i = 0; i < jquery.length; i++) {
     streamers[i] = jquery[i].attribs.href.split("/")[1];
   }
   return;
@@ -236,7 +233,7 @@ async function getNewStreamers(page) {
 
 async function checkLogin(page) {
   let cookieSetByServer = await page.cookies();
-  for (var i = 0; i < cookieSetByServer.length; i++) {
+  for (let i = 0; i < cookieSetByServer.length; i++) {
     if (cookieSetByServer[i].name == "twilight-user") {
       console.log("✅ Login successful!");
       return true;
@@ -251,17 +248,17 @@ async function checkLogin(page) {
   process.exit();
 }
 
-async function scroll(page, times) {
+async function scroll(page) {
   console.log("Emulating scrolling...");
 
-  for (var i = 0; i < times; i++) {
+  for (let i = 0; i < SCROLL_REPETITIONS; i++) {
     await page.evaluate(async () => {
-      var x = document.getElementsByClassName("scrollable-trigger__wrapper");
-      x[0].scrollIntoView();
+      document
+        .getElementsByClassName("scrollable-trigger__wrapper")[0]
+        .scrollIntoView();
     });
     await page.waitFor(SCROLL_DELAY);
   }
-  return;
 }
 
 function getRandomInt(min, max) {
