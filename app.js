@@ -12,8 +12,8 @@ let cookie = null;
 let streamers = null;
 
 // ========================================== CONFIG SECTION =================================================================
-const CONFIG_PATH = "./config.json";
-const SCREENSHOT_FOLDER = "./screenshots/";
+const CONFIG_PATH = "config.json";
+const SCREENSHOT_FOLDER = ".\\screenshots\\";
 const BASE_URL = "https://www.twitch.tv/";
 
 const USER_AGENT =
@@ -28,14 +28,14 @@ const SCROLL_REPETITIONS = 5;
 const MIN_WATCH_MINUTES = 15;
 const MAX_WATCH_MINUTES = 30;
 
-const REFRESH_EVERY_AMOUNT = 1;
-const REFRESH_EVERY_UNIT = "hour";
+const REFRESH_INTERVAL_VALUE = 1;
+const REFRESH_INTERVAL_UNIT = "hour";
 
 const SHOW_BROWSER = false;
 const TAKE_SCREENSHOTS = true;
 
-const BROWSER_CLEANTIME_AMOUNT = 1;
-const BROWSER_CLEANTIME_UNIT = "hour";
+const BROWSER_RESTART_TIME_VALUE = 1;
+const BROWSER_RESTART_TIME_UNIT = "hour";
 
 const browserConfig = {
   headless: !SHOW_BROWSER,
@@ -65,25 +65,25 @@ const STREAM_QUALITY_QUERY = 'input[data-a-target="tw-radio"]';
 
 async function viewRandomPage(browser, page) {
   var nextStreamerRefresh = dayjs().add(
-    REFRESH_EVERY_AMOUNT,
-    REFRESH_EVERY_UNIT
+    REFRESH_INTERVAL_VALUE,
+    REFRESH_INTERVAL_UNIT
   );
 
   var nextBrowserClean = dayjs().add(
-    BROWSER_CLEANTIME_AMOUNT,
-    BROWSER_CLEANTIME_UNIT
+    BROWSER_RESTART_TIME_VALUE,
+    BROWSER_RESTART_TIME_UNIT
   );
 
   while (run) {
     // Are we due for a cleaning?
     if (dayjs(nextBrowserClean).isBefore(dayjs())) {
-      const newBrowser = await cleanup(browser);
+      const newBrowser = await restartBrowser(browser);
       browser = newBrowser.browser;
       page = newBrowser.page;
       shouldSetStreamSettings = true;
       nextBrowserClean = dayjs().add(
-        BROWSER_CLEANTIME_AMOUNT,
-        BROWSER_CLEANTIME_UNIT
+        BROWSER_RESTART_TIME_VALUE,
+        BROWSER_RESTART_TIME_UNIT
       );
     }
 
@@ -91,14 +91,14 @@ async function viewRandomPage(browser, page) {
     if (dayjs(nextStreamerRefresh).isBefore(dayjs())) {
       await getNewStreamers(page);
       nextStreamerRefresh = dayjs().add(
-        REFRESH_EVERY_AMOUNT,
-        REFRESH_EVERY_UNIT
+        REFRESH_INTERVAL_VALUE,
+        REFRESH_INTERVAL_UNIT
       );
     }
 
     // Choose a random streamer and watchtime
-    let chosenStreamer = streamers[getRandomInt(0, streamers.length - 1)];
-    var watchFor = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES) * 60000;
+    const chosenStreamer = streamers[getRandomInt(0, streamers.length - 1)];
+    const watchFor = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES) * 60000;
 
     // Watch chosen streamer
     console.log("\nNow watching streamer: ", BASE_URL + chosenStreamer);
@@ -138,7 +138,7 @@ async function viewRandomPage(browser, page) {
 
       if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
 
-      const screenshotName = `${SCREENSHOT_FOLDER}${chosenStreamer}.png`;
+      const screenshotName = `${chosenStreamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
 
       await page.screenshot({ path: screenshotPath });
@@ -202,19 +202,16 @@ async function spawnBrowser() {
   var page = await browser.newPage();
 
   console.log("Setting User-Agent...");
-  await page.setUserAgent(USER_AGENT); //Set userAgent
+  await page.setUserAgent(USER_AGENT);
 
   console.log("Setting auth token...");
-  await page.setCookie(...cookie); //Set cookie
+  await page.setCookie(...cookie);
 
   console.log("⏰ Setting timeouts...");
-  await page.setDefaultNavigationTimeout(process.env.timeout || 0);
-  await page.setDefaultTimeout(process.env.timeout || 0);
+  page.setDefaultNavigationTimeout(0);
+  page.setDefaultTimeout(0);
 
-  return {
-    browser,
-    page,
-  };
+  return { browser, page };
 }
 
 async function getNewStreamers(page) {
@@ -250,9 +247,7 @@ async function checkLogin(page) {
   console.log(
     "\nPleas ensure that you have a valid twitch auth-token.\nhttps://github.com/D3vl0per/Valorant-watcher#how-token-does-it-look-like"
   );
-  if (!process.env.token) {
-    fs.unlinkSync(CONFIG_PATH);
-  }
+  fs.unlinkSync(CONFIG_PATH);
   process.exit();
 }
 
@@ -294,11 +289,10 @@ async function queryOnWebsite(page, query) {
   return jquery;
 }
 
-async function cleanup(browser) {
+async function restartBrowser(browser) {
   const pages = await browser.pages();
   await pages.map((page) => page.close());
-  await treekill(browser.process().pid, "SIGKILL");
-  //await browser.close();
+  treekill(browser.process().pid, "SIGKILL");
   return await spawnBrowser();
 }
 
