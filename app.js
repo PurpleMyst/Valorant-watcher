@@ -300,7 +300,7 @@ async function getNewStreamers(page) {
 /**
  * @description Validate the auth token given
  * @param {puppeteer.Page} page
- * @returns {Promise<boolean}
+ * @returns {Promise<boolean>}
  */
 async function checkLogin(page) {
   let cookieSetByServer = await page.cookies();
