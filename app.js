@@ -6,9 +6,20 @@ const fs = require("fs");
 const treekill = require("tree-kill");
 const path = require("path");
 
+const authTokenCookie = {
+  domain: ".twitch.tv",
+  hostOnly: false,
+  httpOnly: false,
+  name: "auth-token",
+  path: "/",
+  sameSite: "no_restriction",
+  secure: true,
+  session: false,
+  storeId: "0",
+  id: 1,
+};
+
 let run = true;
-let shouldSetStreamSettings = true;
-let cookie = null;
 let streamers = null;
 
 // ========================================== CONFIG SECTION =================================================================
@@ -31,7 +42,7 @@ const MAX_WATCH_MINUTES = 30;
 const REFRESH_INTERVAL_VALUE = 1;
 const REFRESH_INTERVAL_UNIT = "hour";
 
-const SHOW_BROWSER = false;
+const SHOW_BROWSER = true;
 const TAKE_SCREENSHOTS = true;
 
 const BROWSER_RESTART_TIME_VALUE = 1;
@@ -40,6 +51,7 @@ const BROWSER_RESTART_TIME_UNIT = "hour";
 const browserConfig = {
   headless: !SHOW_BROWSER,
   args: [
+    "--mute-audio",
     "--disable-dev-shm-usage",
     "--disable-accelerated-2d-canvas",
     "--no-first-run",
@@ -61,9 +73,11 @@ const STREAM_SETTINGS_QUERY = '[data-a-target="player-settings-button"]';
 const STREAM_QUALITY_SETTING_QUERY =
   '[data-a-target="player-settings-menu-item-quality"]';
 const STREAM_QUALITY_QUERY = 'input[data-a-target="tw-radio"]';
+const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
+
 // ========================================== CONFIG SECTION =================================================================
 
-async function viewRandomPage(browser, page) {
+async function watchRandomStreamers(browser, page) {
   let nextStreamerRefresh = dayjs().add(
     REFRESH_INTERVAL_VALUE,
     REFRESH_INTERVAL_UNIT
@@ -80,7 +94,6 @@ async function viewRandomPage(browser, page) {
       const newBrowser = await restartBrowser(browser);
       browser = newBrowser.browser;
       page = newBrowser.page;
-      shouldSetStreamSettings = true;
       nextBrowserClean = dayjs().add(
         BROWSER_RESTART_TIME_VALUE,
         BROWSER_RESTART_TIME_UNIT
@@ -105,52 +118,57 @@ async function viewRandomPage(browser, page) {
     await page.goto(BASE_URL + chosenStreamer, { waitUntil: "networkidle0" });
 
     // Remove annoying popups
-    await clickWhenExist(page, COOKIE_POLICY_QUERY);
-    await clickWhenExist(page, MATURE_CONTENT_QUERY);
+    await clickIfPresent(page, COOKIE_POLICY_QUERY);
+    await clickIfPresent(page, MATURE_CONTENT_QUERY);
 
-    // If we haven't set the stream settings for this browser yet, do it
-    if (shouldSetStreamSettings) {
-      console.log("Setting lowest possible resolution..");
-      await clickWhenExist(page, STREAM_PAUSE_QUERY);
-
-      await clickWhenExist(page, STREAM_SETTINGS_QUERY);
-      await page.waitFor(STREAM_QUALITY_SETTING_QUERY);
-
-      await clickWhenExist(page, STREAM_QUALITY_SETTING_QUERY);
-      await page.waitFor(STREAM_QUALITY_QUERY);
-
-      let resolution = await queryOnWebsite(page, STREAM_QUALITY_QUERY);
-      resolution = resolution[resolution.length - 1].attribs.id;
-      await page.evaluate((resolution) => {
-        document.getElementById(resolution).click();
-      }, resolution);
-
-      await clickWhenExist(page, STREAM_PAUSE_QUERY);
-
-      // Mute the streamer
-      await page.keyboard.press("m");
-
-      shouldSetStreamSettings = false;
+    // Is this streamer still streaming?
+    const channelStatusElement = await queryOnWebsite(
+      page,
+      CHANNEL_STATUS_QUERY
+    );
+    console.log("Channel status: " + channelStatusElement.text());
+    if (channelStatusElement.text() !== "LIVE") {
+      console.log("Nevermind, they're not streaming ...");
+      continue;
     }
+
+    // Always set the lowest possible resolution
+    // It's inconsistent between streamers
+    console.log("Setting lowest possible resolution...");
+    await clickIfPresent(page, STREAM_PAUSE_QUERY);
+
+    await clickIfPresent(page, STREAM_SETTINGS_QUERY);
+    await page.waitFor(STREAM_QUALITY_SETTING_QUERY);
+
+    await clickIfPresent(page, STREAM_QUALITY_SETTING_QUERY);
+    await page.waitFor(STREAM_QUALITY_QUERY);
+
+    const resolutions = await queryOnWebsite(page, STREAM_QUALITY_QUERY);
+    const resolutionId = resolutions[resolutions.length - 1].attribs.id;
+
+    await page.evaluate((resolutionId) => {
+      document.getElementById(resolutionId).click();
+    }, resolutionId);
+
+    await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
     if (TAKE_SCREENSHOTS) {
       await page.waitFor(1000);
 
-      if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
-
       const screenshotName = `${chosenStreamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
 
+      if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
       await page.screenshot({ path: screenshotPath });
 
       console.log("Screenshot created: " + screenshotPath);
     }
 
-    // Get account statu from sidebar
-    await clickWhenExist(page, SIDEBAR_QUERY);
+    // Get account status from sidebar
+    await clickIfPresent(page, SIDEBAR_QUERY);
     await page.waitFor(USER_STATUS_QUERY);
     const status = await queryOnWebsite(page, USER_STATUS_QUERY);
-    await clickWhenExist(page, SIDEBAR_QUERY);
+    await clickIfPresent(page, SIDEBAR_QUERY);
 
     console.log(
       "Account status:",
@@ -163,51 +181,31 @@ async function viewRandomPage(browser, page) {
   }
 }
 
-async function readLoginData() {
-  const cookie = [
-    {
-      domain: ".twitch.tv",
-      hostOnly: false,
-      httpOnly: false,
-      name: "auth-token",
-      path: "/",
-      sameSite: "no_restriction",
-      secure: true,
-      session: false,
-      storeId: "0",
-      id: 1,
-    },
-  ];
+async function readConfig() {
   console.log("Checking config file...");
 
   if (fs.existsSync(CONFIG_PATH)) {
     console.log("✅ Json config found!");
-
-    let configFile = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-
-    browserConfig.executablePath = configFile.exec;
-    cookie[0].value = configFile.token;
-
-    return cookie;
+    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } else {
     console.log("❌ No config file found!");
     process.exit(1);
   }
 }
 
-async function spawnBrowser() {
+async function openBrowser() {
   console.log("=========================");
   console.log("Launching browser...");
-  let browser = await puppeteer.launch(browserConfig);
-  let page = await browser.newPage();
+  const browser = await puppeteer.launch(browserConfig);
+  const page = await browser.newPage();
 
   console.log("Setting User-Agent...");
   await page.setUserAgent(USER_AGENT);
 
   console.log("Setting auth token...");
-  await page.setCookie(...cookie);
+  await page.setCookie(authTokenCookie);
 
-  console.log("⏰ Setting timeouts...");
+  console.log("Setting timeouts to zero...");
   page.setDefaultNavigationTimeout(0);
   page.setDefaultTimeout(0);
 
@@ -249,9 +247,12 @@ async function checkLogin(page) {
 }
 
 async function scroll(page) {
-  console.log("Emulating scrolling...");
+  console.log(`Scrolling to ${SCROLL_REPETITIONS} scrollable triggers ...`);
+  console.log(
+    `This'll take ${(SCROLL_REPETITIONS * SCROLL_DELAY) / 1000} seconds`
+  );
 
-  for (let i = 0; i < SCROLL_REPETITIONS; i++) {
+  for (let i = 0; i < SCROLL_REPETITIONS; ++i) {
     await page.evaluate(async () => {
       document
         .getElementsByClassName("scrollable-trigger__wrapper")[0]
@@ -267,7 +268,14 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-async function clickWhenExist(page, query) {
+async function queryOnWebsite(page, query) {
+  let bodyHTML = await page.evaluate(() => document.body.innerHTML);
+  let $ = cheerio.load(bodyHTML);
+  const jquery = $(query);
+  return jquery;
+}
+
+async function clickIfPresent(page, query) {
   let result = await queryOnWebsite(page, query);
 
   try {
@@ -279,38 +287,35 @@ async function clickWhenExist(page, query) {
   } catch (e) {}
 }
 
-async function queryOnWebsite(page, query) {
-  let bodyHTML = await page.evaluate(() => document.body.innerHTML);
-  let $ = cheerio.load(bodyHTML);
-  const jquery = $(query);
-  return jquery;
-}
-
 async function restartBrowser(browser) {
   const pages = await browser.pages();
   await pages.map((page) => page.close());
   treekill(browser.process().pid, "SIGKILL");
-  return await spawnBrowser();
-}
-
-async function shutDown() {
-  console.log("\nBye Bye");
-  run = false;
-  process.exit();
+  return await openBrowser();
 }
 
 async function main() {
   console.clear();
   console.log("=========================");
-  cookie = await readLoginData();
-  const { browser, page } = await spawnBrowser();
+
+  const { exec, token } = await readConfig();
+  browserConfig.executablePath = exec;
+  authTokenCookie.value = token;
+
+  const { browser, page } = await openBrowser();
   await getNewStreamers(page);
   console.log("=========================");
-  console.log("Running watcher...");
-  await viewRandomPage(browser, page);
+  console.log("Watching random streamers...");
+  await watchRandomStreamers(browser, page);
 }
 
-main();
+async function shutdown() {
+  console.log();
+  console.log("See ya!");
+  process.exit(0);
+}
 
-process.on("SIGINT", shutDown);
-process.on("SIGTERM", shutDown);
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+main();
