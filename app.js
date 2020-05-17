@@ -101,6 +101,14 @@ async function hasValorantDrop(browser) {
 }
 
 /**
+ * @param {number} num The number to jitter
+ * @returns {number} The number jittered by 10%
+ */
+function jitter(num) {
+  return num + getRandomInt(-num / 10, num / 10);
+}
+
+/**
  * @description Start watching random streamers
  * @param {puppeteer.Browser} browser The current browser instance
  * @param {puppeteer.Page} page The twitch.tv streamer page
@@ -152,6 +160,19 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, COOKIE_POLICY_QUERY);
     await clickIfPresent(page, MATURE_CONTENT_QUERY);
 
+    // Check for content gate overlay
+    const contentGate = await queryOnWebsite(
+      page,
+      '[data-a-target="player-overlay-content-gate"]'
+    );
+    const errorMatch = contentGate.text().match(/Error #(\d{4})/);
+    if (errorMatch !== null) {
+      console.error("We got a playback error: " + errorMatch[1]);
+      console.info("Moving on to next streamer");
+      await page.waitFor(jitter(1000));
+      continue;
+    }
+
     // Is this streamer still streaming?
     const channelStatusElement = await queryOnWebsite(
       page,
@@ -159,9 +180,10 @@ async function watchRandomStreamers(browser, page) {
     );
     console.log("Channel status: " + channelStatusElement.text());
     // We use starsWith because sometimes we get LIVELIVE
+    // Also toUpperCase because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
-    if (!channelStatusElement.text().startsWith("LIVE")) {
+    if (!channelStatusElement.text().toUpperCase().startsWith("LIVE")) {
       console.log("Nevermind, they're not streaming ...");
       continue;
     }
@@ -187,7 +209,7 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
     if (TAKE_SCREENSHOTS) {
-      await page.waitFor(1000);
+      await page.waitFor(jitter(1000));
 
       const screenshotName = `${chosenStreamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
@@ -351,7 +373,7 @@ async function clickIfPresent(page, query) {
   try {
     if (result[0].type == "tag" && result[0].name == "button") {
       await page.click(query);
-      await page.waitFor(500);
+      await page.waitFor(jitter(500));
       return;
     }
   } catch (e) {}
