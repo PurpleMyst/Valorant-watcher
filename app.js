@@ -181,7 +181,6 @@ async function watchRandomStreamers(browser, page) {
     const errorMatch = contentGate.text().match(/Error #(\d{4})/);
     if (errorMatch !== null) {
       console.error("We got a playback error: " + errorMatch[1]);
-      console.info("Moving on to next streamer");
       await page.waitFor(jitter(1000));
       continue;
     }
@@ -189,13 +188,24 @@ async function watchRandomStreamers(browser, page) {
     // Is this streamer still streaming?
     const channelStatusElement = await query(page, CHANNEL_STATUS_QUERY);
     console.info("Channel status: " + channelStatusElement.text());
-    // We use starsWith because sometimes we get LIVELIVE
-    // Also toUpperCase because sometimes we get LiveLIVE
+    // We use `startsWith` because sometimes we get LIVELIVE
+    // Also `toUpperCase` because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
     if (!channelStatusElement.text().toUpperCase().startsWith("LIVE")) {
       console.info("Nevermind, they're not streaming ...");
+      await page.waitFor(jitter(1000));
       continue;
+    }
+
+    // Does the streamer have drops enabled?
+    const dropsEnabled = await query(page, '[data-a-target="Drops Enabled"]');
+    if (dropsEnabled.length === 0) {
+      console.info("Streamer DOES NOT have drops enabled");
+      await page.waitFor(jitter(1000));
+      continue;
+    } else {
+      console.info("Streamer has drops enabled");
     }
 
     // Always set the lowest possible resolution
@@ -246,6 +256,8 @@ async function watchRandomStreamers(browser, page) {
 
     await page.waitFor(watchmillis);
   }
+
+  console.error("We should never get here.");
 }
 
 /**

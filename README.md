@@ -11,6 +11,7 @@ Simple puppeteer-based node.js application which watches Valorant livestreams fo
 - Automatic lowest possible resolution settings to save bandwith
 - Avoid wasting time on offline streams or streams with errors
 - Avoid wasting bandwidth when you've already got the drop
+- Avoid watching streamers which are playing valorant but don't have drops enabled
 
 ## Setup
 
