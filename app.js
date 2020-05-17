@@ -325,16 +325,13 @@ async function getNewStreamers(page) {
  * @param {puppeteer.Page} page
  */
 async function checkLogin(page) {
-  let cookieSetByServer = await page.cookies();
-  for (let i = 0; i < cookieSetByServer.length; i++) {
-    if (cookieSetByServer[i].name == "twilight-user") {
-      console.info("Login successful!");
-    }
+  const cookies = await page.cookies();
+  if (cookies.findIndex((cookie) => cookie.name === "twilight-user") !== -1) {
+    console.info("Login successful!");
+  } else {
+    console.error("Invalid token.");
+    process.exit();
   }
-
-  console.error("Invalid token.");
-  fs.unlinkSync(CONFIG_PATH);
-  process.exit();
 }
 
 /**
@@ -345,7 +342,7 @@ async function scroll(page) {
   console.info(
     `Scrolling to ${SCROLL_REPETITIONS} scrollable triggers (ETA ${
       (SCROLL_REPETITIONS * SCROLL_DELAY) / 1000
-    })...`
+    } seconds)...`
   );
 
   for (let i = 0; i < SCROLL_REPETITIONS; ++i) {
@@ -372,14 +369,14 @@ async function query(page, query) {
 /**
  * @description Run a cheerio query on the current page
  * @param {puppeteer.Page} page
- * @param {String} query
+ * @param {String} queryString
  */
-async function clickIfPresent(page, query) {
-  let result = await query(page, query);
+async function clickIfPresent(page, queryString) {
+  let result = await query(page, queryString);
 
   try {
     if (result[0].type == "tag" && result[0].name == "button") {
-      await page.click(query);
+      await page.click(queryString);
       await page.waitFor(jitter(500));
       return;
     }
