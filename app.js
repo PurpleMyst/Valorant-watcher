@@ -1,3 +1,5 @@
+// @ts-check
+
 require("dotenv").config();
 const puppeteer = require("puppeteer-core");
 const dayjs = require("dayjs");
@@ -6,17 +8,17 @@ const fs = require("fs");
 const treekill = require("tree-kill");
 const path = require("path");
 
+/** @type puppeteer.SetCookie */
 const authTokenCookie = {
-  domain: ".twitch.tv",
-  hostOnly: false,
-  httpOnly: false,
   name: "auth-token",
+  value: "",
+
+  domain: ".twitch.tv",
+  httpOnly: false,
   path: "/",
-  sameSite: "no_restriction",
+  sameSite: "Lax",
   secure: true,
   session: false,
-  storeId: "0",
-  id: 1,
 };
 
 let run = true;
@@ -78,7 +80,7 @@ const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
 /**
  * @description Check if there are _any_ drops in the inventory page
  * @param {puppeteer.Browser} browser
- * @returns {bool} Are there any drops?
+ * @returns {Promise<boolean>} Are there any drops?
  */
 async function hasValorantDrop(browser) {
   console.debug("Opening inventory page...");
@@ -98,6 +100,11 @@ async function hasValorantDrop(browser) {
   return noDrops.length === 0;
 }
 
+/**
+ * @description Start watching random streamers
+ * @param {puppeteer.Browser} browser The current browser instance
+ * @param {puppeteer.Page} page The twitch.tv streamer page
+ */
 async function watchRandomStreamers(browser, page) {
   let nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
   let nextBrowserClean = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
@@ -130,10 +137,7 @@ async function watchRandomStreamers(browser, page) {
     // Are we due for a streamer refresh?
     if (dayjs(nextStreamerRefresh).isBefore(dayjs())) {
       await getNewStreamers(page);
-      nextStreamerRefresh = dayjs().add(
-        REFRESH_INTERVAL,
-        REFRESH_INTERVAL_UNIT
-      );
+      nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
     }
 
     // Choose a random streamer and watchtime
@@ -211,6 +215,10 @@ async function watchRandomStreamers(browser, page) {
   }
 }
 
+/**
+ * @description Read the config to get token and browser executable path
+ * @returns {Promise<{exec: string, token: string}>}
+ */
 async function readConfig() {
   console.log("Checking config file...");
 
@@ -223,6 +231,10 @@ async function readConfig() {
   }
 }
 
+/**
+ * @description Launch a new browser instance
+ * @returns {Promise<{browser: puppeteer.Browser, page: puppeteer.Page}>}
+ */
 async function openBrowser() {
   console.log("=========================");
   console.log("Launching browser...");
@@ -242,6 +254,10 @@ async function openBrowser() {
   return { browser, page };
 }
 
+/**
+ * @description Refresh the list of streamers
+ * @param {puppeteer.Page} page
+ */
 async function getNewStreamers(page) {
   console.log("=========================");
   await page.goto(STREAMERS_URL, { waitUntil: "networkidle0" });
@@ -259,6 +275,11 @@ async function getNewStreamers(page) {
   return;
 }
 
+/**
+ * @description Validate the auth token given
+ * @param {puppeteer.Page} page
+ * @returns {Promise<boolean}
+ */
 async function checkLogin(page) {
   let cookieSetByServer = await page.cookies();
   for (let i = 0; i < cookieSetByServer.length; i++) {
@@ -276,6 +297,10 @@ async function checkLogin(page) {
   process.exit();
 }
 
+/**
+ * @description Scroll to an amount of scrollable triggers
+ * @param {puppeteer.Page} page
+ */
 async function scroll(page) {
   console.log(`Scrolling to ${SCROLL_REPETITIONS} scrollable triggers ...`);
   console.log(
@@ -292,6 +317,12 @@ async function scroll(page) {
   }
 }
 
+/**
+ * @description Return a random integer in a given range
+ * @param {number} min The minimum number to get, inclusive
+ * @param {number} max The maximum number to get, inclusive
+ * @returns {number} A random number
+ */
 function getRandomInt(min, max) {
   min = Math.ceil(min);
   max = Math.floor(max);
@@ -299,7 +330,6 @@ function getRandomInt(min, max) {
 }
 
 /**
- *
  * @param {puppeteer.Page} page
  * @param {string} query
  */
@@ -310,6 +340,11 @@ async function queryOnWebsite(page, query) {
   return jquery;
 }
 
+/**
+ * @description Run a cheerio query on the current page
+ * @param {puppeteer.Page} page
+ * @param {String} query
+ */
 async function clickIfPresent(page, query) {
   let result = await queryOnWebsite(page, query);
 
@@ -322,9 +357,15 @@ async function clickIfPresent(page, query) {
   } catch (e) {}
 }
 
+/**
+ * @param {puppeteer.Browser} browser
+ */
 async function restartBrowser(browser) {
   const pages = await browser.pages();
-  await pages.map((page) => page.close());
+  /**
+   * @param {puppeteer.Page} page
+   */
+  await Promise.all(pages.map((page) => page.close()));
   treekill(browser.process().pid, "SIGKILL");
   return await openBrowser();
 }
