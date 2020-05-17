@@ -39,14 +39,12 @@ const SCROLL_REPETITIONS = 5;
 const MIN_WATCH_MINUTES = 15;
 const MAX_WATCH_MINUTES = 30;
 
-const REFRESH_INTERVAL_VALUE = 1;
-const REFRESH_INTERVAL_UNIT = "hour";
+const REFRESH_INTERVAL = 1;
+const BROWSER_RESTART_INTERVAL = 1;
+const TIME_UNIT = "hour";
 
 const SHOW_BROWSER = true;
 const TAKE_SCREENSHOTS = true;
-
-const BROWSER_RESTART_TIME_VALUE = 1;
-const BROWSER_RESTART_TIME_UNIT = "hour";
 
 const browserConfig = {
   headless: !SHOW_BROWSER,
@@ -77,34 +75,63 @@ const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
 
 // ========================================== CONFIG SECTION =================================================================
 
-async function watchRandomStreamers(browser, page) {
-  let nextStreamerRefresh = dayjs().add(
-    REFRESH_INTERVAL_VALUE,
-    REFRESH_INTERVAL_UNIT
+/**
+ * @description Check if there are _any_ drops in the inventory page
+ * @param {puppeteer.Browser} browser
+ * @returns {bool} Are there any drops?
+ */
+async function hasValorantDrop(browser) {
+  console.debug("Opening inventory page...");
+  const page = await browser.newPage();
+  await page.goto(BASE_URL + "inventory", { waitUntil: "networkidle2" });
+  console.debug("Querying for drops ...");
+  const noDrops = await queryOnWebsite(
+    page,
+    'div[data-test-selector="drops-list__no-drops-default"]'
   );
+  await page.close();
+  console.info(
+    noDrops.length === 0
+      ? "Seems like we have a drop!"
+      : "Doesn't look like we got anything :("
+  );
+  return noDrops.length === 0;
+}
 
-  let nextBrowserClean = dayjs().add(
-    BROWSER_RESTART_TIME_VALUE,
-    BROWSER_RESTART_TIME_UNIT
-  );
+async function watchRandomStreamers(browser, page) {
+  let nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
+  let nextBrowserClean = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
+
+  // Let's check before starting if we got valorant
+  if (await hasValorantDrop(browser)) {
+    console.log("Seems like we got it!");
+    await shutdown();
+    return;
+  }
 
   while (run) {
     // Are we due for a cleaning?
     if (dayjs(nextBrowserClean).isBefore(dayjs())) {
+      console.debug("Restarting the browser ...");
+
+      // Before leaving, let's check if we got valorant
+      if (await hasValorantDrop(browser)) {
+        console.log("Seems like we got it!");
+        await shutdown();
+        return;
+      }
+
       const newBrowser = await restartBrowser(browser);
       browser = newBrowser.browser;
       page = newBrowser.page;
-      nextBrowserClean = dayjs().add(
-        BROWSER_RESTART_TIME_VALUE,
-        BROWSER_RESTART_TIME_UNIT
-      );
+      nextBrowserClean = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
     }
 
     // Are we due for a streamer refresh?
     if (dayjs(nextStreamerRefresh).isBefore(dayjs())) {
       await getNewStreamers(page);
       nextStreamerRefresh = dayjs().add(
-        REFRESH_INTERVAL_VALUE,
+        REFRESH_INTERVAL,
         REFRESH_INTERVAL_UNIT
       );
     }
@@ -271,6 +298,11 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
+/**
+ *
+ * @param {puppeteer.Page} page
+ * @param {string} query
+ */
 async function queryOnWebsite(page, query) {
   let bodyHTML = await page.evaluate(() => document.body.innerHTML);
   let $ = cheerio.load(bodyHTML);
