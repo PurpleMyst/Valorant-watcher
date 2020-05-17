@@ -26,7 +26,7 @@ let streamers = null;
 
 // ========================================== CONFIG SECTION =================================================================
 const CONFIG_PATH = "config.json";
-const SCREENSHOT_FOLDER = ".\\screenshots\\";
+const SCREENSHOT_FOLDER = "screenshots";
 const BASE_URL = "https://www.twitch.tv/";
 
 const USER_AGENT =
