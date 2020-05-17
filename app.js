@@ -85,9 +85,9 @@ const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
 async function hasValorantDrop(browser) {
   console.debug("Opening inventory page...");
   const page = await browser.newPage();
-  await page.goto(BASE_URL + "inventory", { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}inventory`, { waitUntil: "networkidle2" });
   console.debug("Querying for drops ...");
-  const noDrops = await queryOnWebsite(
+  const noDrops = await query(
     page,
     'div[data-test-selector="drops-list__no-drops-default"]'
   );
@@ -98,6 +98,25 @@ async function hasValorantDrop(browser) {
       : "Doesn't look like we got anything :("
   );
   return noDrops.length === 0;
+}
+
+async function checkValorantDrop(browser) {
+  if (await hasValorantDrop(browser)) {
+    console.log("Seems like we got it!");
+    await shutdown();
+  }
+}
+
+/**
+ * @description Return a random integer in a given range
+ * @param {number} min The minimum number to get, inclusive
+ * @param {number} max The maximum number to get, inclusive
+ * @returns {number} A random number
+ */
+function getRandomInt(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 /**
@@ -115,31 +134,23 @@ function jitter(num) {
  */
 async function watchRandomStreamers(browser, page) {
   let nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
-  let nextBrowserClean = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
+  let nextBrowserRestart = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
 
   // Let's check before starting if we got valorant
-  if (await hasValorantDrop(browser)) {
-    console.log("Seems like we got it!");
-    await shutdown();
-    return;
-  }
+  await checkValorantDrop(browser);
 
   while (run) {
     // Are we due for a cleaning?
-    if (dayjs(nextBrowserClean).isBefore(dayjs())) {
+    if (dayjs(nextBrowserRestart).isBefore(dayjs())) {
       console.debug("Restarting the browser ...");
 
       // Before leaving, let's check if we got valorant
-      if (await hasValorantDrop(browser)) {
-        console.log("Seems like we got it!");
-        await shutdown();
-        return;
-      }
+      await checkValorantDrop(browser);
 
       const newBrowser = await restartBrowser(browser);
       browser = newBrowser.browser;
       page = newBrowser.page;
-      nextBrowserClean = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
+      nextBrowserRestart = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
     }
 
     // Are we due for a streamer refresh?
@@ -150,10 +161,12 @@ async function watchRandomStreamers(browser, page) {
 
     // Choose a random streamer and watchtime
     const chosenStreamer = streamers[getRandomInt(0, streamers.length - 1)];
-    const watchFor = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES) * 60000;
+    const watchminutes = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES);
+    const watchmillis = watchminutes * 60 * 1000;
 
     // Watch chosen streamer
-    console.log("\nNow watching streamer: ", BASE_URL + chosenStreamer);
+    console.info();
+    console.info(`Now watching streamer: ${BASE_URL}${chosenStreamer}`);
     await page.goto(BASE_URL + chosenStreamer, { waitUntil: "networkidle0" });
 
     // Remove annoying popups
@@ -161,7 +174,7 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, MATURE_CONTENT_QUERY);
 
     // Check for content gate overlay
-    const contentGate = await queryOnWebsite(
+    const contentGate = await query(
       page,
       '[data-a-target="player-overlay-content-gate"]'
     );
@@ -174,23 +187,20 @@ async function watchRandomStreamers(browser, page) {
     }
 
     // Is this streamer still streaming?
-    const channelStatusElement = await queryOnWebsite(
-      page,
-      CHANNEL_STATUS_QUERY
-    );
-    console.log("Channel status: " + channelStatusElement.text());
+    const channelStatusElement = await query(page, CHANNEL_STATUS_QUERY);
+    console.info("Channel status: " + channelStatusElement.text());
     // We use starsWith because sometimes we get LIVELIVE
     // Also toUpperCase because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
     if (!channelStatusElement.text().toUpperCase().startsWith("LIVE")) {
-      console.log("Nevermind, they're not streaming ...");
+      console.info("Nevermind, they're not streaming ...");
       continue;
     }
 
     // Always set the lowest possible resolution
     // It's inconsistent between streamers
-    console.log("Setting lowest possible resolution...");
+    console.info("Setting lowest possible resolution...");
     await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
     await clickIfPresent(page, STREAM_SETTINGS_QUERY);
@@ -199,7 +209,7 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, STREAM_QUALITY_SETTING_QUERY);
     await page.waitFor(STREAM_QUALITY_QUERY);
 
-    const resolutions = await queryOnWebsite(page, STREAM_QUALITY_QUERY);
+    const resolutions = await query(page, STREAM_QUALITY_QUERY);
     const resolutionId = resolutions[resolutions.length - 1].attribs.id;
 
     await page.evaluate((resolutionId) => {
@@ -217,23 +227,24 @@ async function watchRandomStreamers(browser, page) {
       if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
       await page.screenshot({ path: screenshotPath });
 
-      console.log("Screenshot created: " + screenshotPath);
+      console.info(`Screenshot created: ${screenshotPath}`);
     }
 
     // Get account status from sidebar
     await clickIfPresent(page, SIDEBAR_QUERY);
     await page.waitFor(USER_STATUS_QUERY);
-    const status = await queryOnWebsite(page, USER_STATUS_QUERY);
+    const statusElement = await query(page, USER_STATUS_QUERY);
+    const status = statusElement
+      ? statusElement[0].children[0].data
+      : "Unknown";
     await clickIfPresent(page, SIDEBAR_QUERY);
 
-    console.log(
-      "Account status:",
-      status[0] ? status[0].children[0].data : "Unknown"
-    );
-    console.log("Time: " + dayjs().format("HH:mm:ss"));
-    console.log("Watching stream for " + watchFor / (60 * 1000) + " minutes\n");
+    console.info(`Account status: ${status}`);
+    console.info(`Time: ${dayjs().format("HH:mm:ss")}`);
+    console.info(`Watching stream for ${watchminutes} minutes`);
+    console.info();
 
-    await page.waitFor(watchFor);
+    await page.waitFor(watchmillis);
   }
 }
 
@@ -287,7 +298,7 @@ async function getNewStreamers(page) {
   await checkLogin(page);
   console.log("Checking active streamers...");
   await scroll(page);
-  const jquery = await queryOnWebsite(page, CHANNELS_QUERY);
+  const jquery = await query(page, CHANNELS_QUERY);
   streamers = new Array();
 
   console.log("Filtering out html codes...");
@@ -300,21 +311,16 @@ async function getNewStreamers(page) {
 /**
  * @description Validate the auth token given
  * @param {puppeteer.Page} page
- * @returns {Promise<boolean>}
  */
 async function checkLogin(page) {
   let cookieSetByServer = await page.cookies();
   for (let i = 0; i < cookieSetByServer.length; i++) {
     if (cookieSetByServer[i].name == "twilight-user") {
-      console.log("✅ Login successful!");
-      return true;
+      console.info("Login successful!");
     }
   }
-  console.log("🛑 Login failed!");
-  console.log("Invalid token!");
-  console.log(
-    "\nPleas ensure that you have a valid twitch auth-token.\nhttps://github.com/D3vl0per/Valorant-watcher#how-token-does-it-look-like"
-  );
+
+  console.error("Invalid token.");
   fs.unlinkSync(CONFIG_PATH);
   process.exit();
 }
@@ -324,9 +330,10 @@ async function checkLogin(page) {
  * @param {puppeteer.Page} page
  */
 async function scroll(page) {
-  console.log(`Scrolling to ${SCROLL_REPETITIONS} scrollable triggers ...`);
-  console.log(
-    `This'll take ${(SCROLL_REPETITIONS * SCROLL_DELAY) / 1000} seconds`
+  console.info(
+    `Scrolling to ${SCROLL_REPETITIONS} scrollable triggers (ETA ${
+      (SCROLL_REPETITIONS * SCROLL_DELAY) / 1000
+    })...`
   );
 
   for (let i = 0; i < SCROLL_REPETITIONS; ++i) {
@@ -335,27 +342,15 @@ async function scroll(page) {
         .getElementsByClassName("scrollable-trigger__wrapper")[0]
         .scrollIntoView();
     });
-    await page.waitFor(SCROLL_DELAY);
+    await page.waitFor(jitter(SCROLL_DELAY));
   }
-}
-
-/**
- * @description Return a random integer in a given range
- * @param {number} min The minimum number to get, inclusive
- * @param {number} max The maximum number to get, inclusive
- * @returns {number} A random number
- */
-function getRandomInt(min, max) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 /**
  * @param {puppeteer.Page} page
  * @param {string} query
  */
-async function queryOnWebsite(page, query) {
+async function query(page, query) {
   let bodyHTML = await page.evaluate(() => document.body.innerHTML);
   let $ = cheerio.load(bodyHTML);
   const jquery = $(query);
@@ -368,7 +363,7 @@ async function queryOnWebsite(page, query) {
  * @param {String} query
  */
 async function clickIfPresent(page, query) {
-  let result = await queryOnWebsite(page, query);
+  let result = await query(page, query);
 
   try {
     if (result[0].type == "tag" && result[0].name == "button") {
