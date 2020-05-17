@@ -268,10 +268,10 @@ async function readConfig() {
   console.log("Checking config file...");
 
   if (fs.existsSync(CONFIG_PATH)) {
-    console.log("✅ Json config found!");
+    console.log("JSON config found!");
     return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } else {
-    console.log("❌ No config file found!");
+    console.log("No config file found!");
     process.exit(1);
   }
 }
