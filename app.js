@@ -127,7 +127,10 @@ async function watchRandomStreamers(browser, page) {
       CHANNEL_STATUS_QUERY
     );
     console.log("Channel status: " + channelStatusElement.text());
-    if (channelStatusElement.text() !== "LIVE") {
+    // We use starsWith because sometimes we get LIVELIVE
+    // This is because there are two elements with that class name
+    // One below the player and one "in" the player
+    if (!channelStatusElement.text().startsWith("LIVE"))
       console.log("Nevermind, they're not streaming ...");
       continue;
     }
