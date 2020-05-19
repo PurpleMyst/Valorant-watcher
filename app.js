@@ -1,9 +1,7 @@
 // @ts-check
 
-require("dotenv").config();
 const puppeteer = require("puppeteer-core");
 const dayjs = require("dayjs");
-const cheerio = require("cheerio");
 const fs = require("fs");
 const treekill = require("tree-kill");
 const path = require("path");
@@ -22,7 +20,9 @@ const authTokenCookie = {
 };
 
 let run = true;
-let streamers = null;
+
+/** @type {string[]} */
+const streamers = [];
 
 // ========================================== CONFIG SECTION =================================================================
 const CONFIG_PATH = "config.json";
@@ -72,8 +72,10 @@ const STREAM_PAUSE_QUERY = 'button[data-a-target="player-play-pause-button"]';
 const STREAM_SETTINGS_QUERY = '[data-a-target="player-settings-button"]';
 const STREAM_QUALITY_SETTING_QUERY =
   '[data-a-target="player-settings-menu-item-quality"]';
-const STREAM_QUALITY_QUERY = 'input[data-a-target="tw-radio"]';
+const STREAM_WORST_QUALITY_QUERY =
+  '[data-a-target="player-settings-menu"] .tw-pd-05:last-child .tw-radio';
 const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
+const NO_DROPS_QUERY = 'div[data-test-selector="drops-list__no-drops-default"]';
 
 // ========================================== CONFIG SECTION =================================================================
 
@@ -87,22 +89,24 @@ async function hasValorantDrop(browser) {
   const page = await browser.newPage();
   await page.goto(`${BASE_URL}inventory`, { waitUntil: "networkidle2" });
   console.debug("Querying for drops ...");
-  const noDrops = await query(
-    page,
-    'div[data-test-selector="drops-list__no-drops-default"]'
-  );
+  const noDropsElement = await page.$(NO_DROPS_QUERY);
+  const noDrops = noDropsElement === null;
   await page.close();
   console.info(
-    noDrops.length === 0
+    noDrops
       ? "Seems like we have a drop!"
       : "Doesn't look like we got anything :("
   );
-  return noDrops.length === 0;
+  return noDrops;
 }
 
+/**
+ * @description Exit the program if we already have the Valorant drop
+ * @param {puppeteer.Browser} browser
+ */
 async function checkValorantDrop(browser) {
   if (await hasValorantDrop(browser)) {
-    await shutdown();
+    // await shutdown();
   }
 }
 
@@ -173,11 +177,13 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, MATURE_CONTENT_QUERY);
 
     // Check for content gate overlay
-    const contentGate = await query(
-      page,
-      '[data-a-target="player-overlay-content-gate"]'
-    );
-    const errorMatch = contentGate.text().match(/Error #(\d{4})/);
+    const contentGate = await page
+      .$eval(
+        '[data-a-target="player-overlay-content-gate"]',
+        (gate) => gate.textContent
+      )
+      .catch(() => "");
+    const errorMatch = contentGate.match(/Error #(\d{4})/);
     if (errorMatch !== null) {
       console.error("We got a playback error: " + errorMatch[1]);
       await page.waitFor(jitter(1000));
@@ -185,21 +191,25 @@ async function watchRandomStreamers(browser, page) {
     }
 
     // Is this streamer still streaming?
-    const channelStatusElement = await query(page, CHANNEL_STATUS_QUERY);
-    console.info("Channel status: " + channelStatusElement.text());
+    const channelStatus = await page
+      .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent)
+      .catch(() => "");
+    console.info("Channel status: " + channelStatus);
     // We use `startsWith` because sometimes we get LIVELIVE
     // Also `toUpperCase` because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
-    if (!channelStatusElement.text().toUpperCase().startsWith("LIVE")) {
+    if (!channelStatus.toUpperCase().startsWith("LIVE")) {
       console.info("Nevermind, they're not streaming ...");
       await page.waitFor(jitter(1000));
       continue;
     }
 
     // Does the streamer have drops enabled?
-    const dropsEnabled = await query(page, '[data-a-target="Drops Enabled"]');
-    if (dropsEnabled.length === 0) {
+    const dropsEnabled = await page
+      .$eval('[data-a-target="Drops Enabled"]', () => true)
+      .catch(() => false);
+    if (!dropsEnabled) {
       console.info("Streamer DOES NOT have drops enabled");
       await page.waitFor(jitter(1000));
       continue;
@@ -213,17 +223,11 @@ async function watchRandomStreamers(browser, page) {
     await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
     await clickIfPresent(page, STREAM_SETTINGS_QUERY);
-    await page.waitFor(STREAM_QUALITY_SETTING_QUERY);
 
+    await page.waitForSelector(STREAM_QUALITY_SETTING_QUERY);
     await clickIfPresent(page, STREAM_QUALITY_SETTING_QUERY);
-    await page.waitFor(STREAM_QUALITY_QUERY);
 
-    const resolutions = await query(page, STREAM_QUALITY_QUERY);
-    const resolutionId = resolutions[resolutions.length - 1].attribs.id;
-
-    await page.evaluate((resolutionId) => {
-      document.getElementById(resolutionId).click();
-    }, resolutionId);
+    await page.click(STREAM_WORST_QUALITY_QUERY);
 
     await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
@@ -241,11 +245,9 @@ async function watchRandomStreamers(browser, page) {
 
     // Get account status from sidebar
     await clickIfPresent(page, SIDEBAR_QUERY);
-    await page.waitFor(USER_STATUS_QUERY);
-    const statusElement = await query(page, USER_STATUS_QUERY);
-    const status = statusElement
-      ? statusElement[0].children[0].data
-      : "Unknown";
+    const status = await page
+      .$eval(USER_STATUS_QUERY, (el) => el.textContent)
+      .catch(() => "Unknown");
     await clickIfPresent(page, SIDEBAR_QUERY);
 
     console.info(`Account status: ${status}`);
@@ -305,18 +307,17 @@ async function openBrowser() {
 async function getNewStreamers(page) {
   console.log("=========================");
   await page.goto(STREAMERS_URL, { waitUntil: "networkidle0" });
-  console.log("Checking login...");
-  await checkLogin(page);
-  console.log("Checking active streamers...");
-  await scroll(page);
-  const jquery = await query(page, CHANNELS_QUERY);
-  streamers = new Array();
 
-  console.log("Filtering out html codes...");
-  for (let i = 0; i < jquery.length; i++) {
-    streamers[i] = jquery[i].attribs.href.split("/")[1];
-  }
-  return;
+  console.info("Checking login...");
+  await checkLogin(page);
+
+  console.info("Checking active streamers...");
+  await scroll(page);
+
+  const newStreamers = await page.$$eval(CHANNELS_QUERY, (streamerLinks) =>
+    streamerLinks.map((link) => link.getAttribute("href").split("/")[1])
+  );
+  streamers.splice(0, streamers.length, ...newStreamers);
 }
 
 /**
@@ -355,34 +356,21 @@ async function scroll(page) {
 }
 
 /**
- * @param {puppeteer.Page} page
- * @param {string} query
- */
-async function query(page, query) {
-  let bodyHTML = await page.evaluate(() => document.body.innerHTML);
-  let $ = cheerio.load(bodyHTML);
-  const jquery = $(query);
-  return jquery;
-}
-
-/**
- * @description Run a cheerio query on the current page
+ * @description Click an element by its query selector if it is present in the page
  * @param {puppeteer.Page} page
  * @param {String} queryString
  */
 async function clickIfPresent(page, queryString) {
-  let result = await query(page, queryString);
-
   try {
-    if (result[0].type == "tag" && result[0].name == "button") {
-      await page.click(queryString);
-      await page.waitFor(jitter(500));
-      return;
-    }
-  } catch (e) {}
+    await page.click(queryString);
+  } catch (e) {
+    console.warn(`Failed to click ${queryString}`);
+  }
+  await page.waitFor(jitter(500));
 }
 
 /**
+ * @description Restart the current browser
  * @param {puppeteer.Browser} browser
  */
 async function restartBrowser(browser) {

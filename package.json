@@ -13,7 +13,6 @@
     "url": "https://github.com/D3vl0per/Valorant-watcher"
   },
   "dependencies": {
-    "cheerio": "^1.0.0-rc.3",
     "dayjs": "^1.8.24",
     "dotenv": "^8.2.0",
     "inquirer": "^7.1.0",
