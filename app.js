@@ -102,7 +102,6 @@ async function hasValorantDrop(browser) {
 
 async function checkValorantDrop(browser) {
   if (await hasValorantDrop(browser)) {
-    console.log("Seems like we got it!");
     await shutdown();
   }
 }
