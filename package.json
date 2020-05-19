@@ -14,8 +14,6 @@
   },
   "dependencies": {
     "dayjs": "^1.8.24",
-    "dotenv": "^8.2.0",
-    "inquirer": "^7.1.0",
     "puppeteer-core": "^2.1.1",
     "tree-kill": "^1.2.2"
   }
