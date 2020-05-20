@@ -13,6 +13,7 @@
     "url": "https://github.com/D3vl0per/Valorant-watcher"
   },
   "dependencies": {
+    "chalk": "^4.0.0",
     "dayjs": "^1.8.24",
     "puppeteer-core": "^2.1.1",
     "tree-kill": "^1.2.2"

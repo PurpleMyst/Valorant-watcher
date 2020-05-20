@@ -5,6 +5,7 @@ const dayjs = require("dayjs");
 const fs = require("fs");
 const treekill = require("tree-kill");
 const path = require("path");
+const chalk = require("chalk");
 
 /** @type puppeteer.SetCookie */
 const authTokenCookie = {
@@ -44,8 +45,10 @@ const REFRESH_INTERVAL = 1;
 const BROWSER_RESTART_INTERVAL = 1;
 const TIME_UNIT = "hour";
 
-const SHOW_BROWSER = true;
+const SHOW_BROWSER = false;
 const TAKE_SCREENSHOTS = true;
+
+const HEADER_WIDTH = 40;
 
 const browserConfig = {
   headless: !SHOW_BROWSER,
@@ -79,19 +82,63 @@ const NO_DROPS_QUERY = 'div[data-test-selector="drops-list__no-drops-default"]';
 // ========================================== CONFIG SECTION =================================================================
 
 /**
+ * @description Output an informational message
+ * @param {string} message
+ */
+function info(message) {
+  console.info(`[${chalk.blue("i")}] ${message}`);
+}
+
+/**
+ * @description Indicate that something succeeded
+ * @param {string} message
+ */
+function success(message) {
+  console.info(`[${chalk.green("✓")}] ${message}`);
+}
+
+/**
+ * @description Output something useful only for debugging
+ * @param {string} message
+ */
+function debug(message) {
+  console.debug(`[${chalk.yellow("d")}] ${message}`);
+}
+
+/**
+ * @description Indicate that something failed
+ * @param {string} message
+ */
+function error(message) {
+  console.error(`[${chalk.red("✗")}] ${message}`);
+}
+
+/**
+ * @description Make a big separator header
+ * @param {string} message
+ */
+function header(message) {
+  const space_around = (HEADER_WIDTH - message.length) / 2;
+  const equals = "=".repeat(space_around - 2);
+  console.log();
+  console.log(`${equals}[ ${chalk.cyan(message)} ]${equals}`);
+}
+
+/**
  * @description Check if there are _any_ drops in the inventory page
  * @param {puppeteer.Browser} browser
  * @returns {Promise<boolean>} Are there any drops?
  */
 async function hasValorantDrop(browser) {
-  console.debug("Opening inventory page...");
+  header("Dropcheck");
+  debug("Opening inventory page ...");
   const page = await browser.newPage();
   await page.goto(`${BASE_URL}/inventory`, { waitUntil: "networkidle2" });
-  console.debug("Querying for drops ...");
+  debug("Querying for drops ...");
   const noDropsElement = await page.$(NO_DROPS_QUERY);
   const noDrops = noDropsElement === null;
   await page.close();
-  console.info(
+  info(
     noDrops
       ? "Seems like we have a drop!"
       : "Doesn't look like we got anything :("
@@ -144,7 +191,7 @@ async function watchRandomStreamers(browser, page) {
   while (run) {
     // Are we due for a cleaning?
     if (dayjs(nextBrowserRestart).isBefore(dayjs())) {
-      console.debug("Restarting the browser ...");
+      info("Restarting the browser ...");
 
       // Before leaving, let's check if we got valorant
       await checkValorantDrop(browser);
@@ -167,8 +214,8 @@ async function watchRandomStreamers(browser, page) {
     const watchmillis = watchminutes * 60 * 1000;
 
     // Watch chosen streamer
-    console.info();
-    console.info(`Now watching streamer: ${BASE_URL}/${streamer}`);
+    header(streamer);
+    info(`Now watching: ${BASE_URL}/${streamer}`);
     await page.goto(`${BASE_URL}/${streamer}`, { waitUntil: "networkidle0" });
 
     // Remove annoying popups
@@ -184,7 +231,7 @@ async function watchRandomStreamers(browser, page) {
       .catch(() => "");
     const errorMatch = contentGate.match(/Error #(\d{4})/);
     if (errorMatch !== null) {
-      console.error("We got a playback error: " + errorMatch[1]);
+      error("Playback error: " + errorMatch[1]);
       await page.waitFor(jitter(1000));
       continue;
     }
@@ -193,13 +240,13 @@ async function watchRandomStreamers(browser, page) {
     const channelStatus = await page
       .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent)
       .catch(() => "");
-    console.info("Channel status: " + channelStatus);
+    info("Channel status: " + channelStatus);
     // We use `startsWith` because sometimes we get LIVELIVE
     // Also `toUpperCase` because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
     if (!channelStatus.toUpperCase().startsWith("LIVE")) {
-      console.info("Nevermind, they're not streaming ...");
+      error("Streamer is offline");
       await page.waitFor(jitter(1000));
       continue;
     }
@@ -209,16 +256,16 @@ async function watchRandomStreamers(browser, page) {
       .$eval('[data-a-target="Drops Enabled"]', () => true)
       .catch(() => false);
     if (!dropsEnabled) {
-      console.info("Streamer DOES NOT have drops enabled");
+      error("Streamer doesn't have drops enabled");
       await page.waitFor(jitter(1000));
       continue;
     } else {
-      console.info("Streamer has drops enabled");
+      info("Streamer has drops enabled");
     }
 
     // Always set the lowest possible resolution
     // It's inconsistent between streamers
-    console.info("Setting lowest possible resolution...");
+    debug("Setting lowest possible resolution ...");
     await clickIfPresent(page, STREAM_PAUSE_QUERY);
 
     await clickIfPresent(page, STREAM_SETTINGS_QUERY);
@@ -236,10 +283,11 @@ async function watchRandomStreamers(browser, page) {
       const screenshotName = `${streamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
 
+      // FIXME: don't use the sync version of these
       if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
       await page.screenshot({ path: screenshotPath });
 
-      console.info(`Screenshot created: ${screenshotPath}`);
+      info(`Screenshot created: ${screenshotPath}`);
     }
 
     // Get account status from sidebar
@@ -249,15 +297,14 @@ async function watchRandomStreamers(browser, page) {
       .catch(() => "Unknown");
     await clickIfPresent(page, SIDEBAR_QUERY);
 
-    console.info(`Account status: ${status}`);
-    console.info(`Time: ${dayjs().format("HH:mm:ss")}`);
-    console.info(`Watching stream for ${watchminutes} minutes`);
-    console.info();
+    info(`Account status: ${status}`);
+    info(`Time: ${dayjs().format("HH:mm:ss")}`);
+    info(`Watching stream for ${watchminutes} minutes`);
 
     await page.waitFor(watchmillis);
   }
 
-  console.error("We should never get here.");
+  error("We should never get here.");
 }
 
 /**
@@ -265,13 +312,13 @@ async function watchRandomStreamers(browser, page) {
  * @returns {Promise<{exec: string, token: string}>}
  */
 async function readConfig() {
-  console.log("Checking config file...");
+  header("Config");
 
   if (fs.existsSync(CONFIG_PATH)) {
-    console.log("JSON config found!");
+    success("JSON config found!");
     return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
   } else {
-    console.log("No config file found!");
+    error("No config file found!");
     process.exit(1);
   }
 }
@@ -281,20 +328,21 @@ async function readConfig() {
  * @returns {Promise<{browser: puppeteer.Browser, page: puppeteer.Page}>}
  */
 async function openBrowser() {
-  console.log("=========================");
-  console.log("Launching browser...");
+  header("Startup");
   const browser = await puppeteer.launch(browserConfig);
   const page = await browser.newPage();
 
-  console.log("Setting User-Agent...");
+  debug("Setting User-Agent ...");
   await page.setUserAgent(USER_AGENT);
 
-  console.log("Setting auth token...");
+  debug("Setting auth token ...");
   await page.setCookie(authTokenCookie);
 
-  console.log("Setting timeouts to zero...");
+  debug("Setting timeouts to zero ...");
   page.setDefaultNavigationTimeout(0);
   page.setDefaultTimeout(0);
+
+  success("Browser started!");
 
   return { browser, page };
 }
@@ -304,19 +352,21 @@ async function openBrowser() {
  * @param {puppeteer.Page} page
  */
 async function getNewStreamers(page) {
-  console.log("=========================");
+  header("Streamer Refresh");
   await page.goto(STREAMERS_URL, { waitUntil: "networkidle0" });
 
-  console.info("Checking login...");
+  debug("Checking login ...");
   await checkLogin(page);
 
-  console.info("Checking active streamers...");
+  debug("Scrolling a bit ...");
   await scroll(page);
 
   const newStreamers = await page.$$eval(CHANNELS_QUERY, (streamerLinks) =>
     streamerLinks.map((link) => link.getAttribute("href").split("/")[1])
   );
   streamers.splice(0, streamers.length, ...newStreamers);
+
+  success(`Got ${streamers.length} new streamers`);
 }
 
 /**
@@ -326,9 +376,9 @@ async function getNewStreamers(page) {
 async function checkLogin(page) {
   const cookies = await page.cookies();
   if (cookies.findIndex((cookie) => cookie.name === "twilight-user") !== -1) {
-    console.info("Login successful!");
+    success("Login successful!");
   } else {
-    console.error("Invalid token.");
+    error("Invalid token.");
     process.exit();
   }
 }
@@ -338,10 +388,10 @@ async function checkLogin(page) {
  * @param {puppeteer.Page} page
  */
 async function scroll(page) {
-  console.info(
+  info(
     `Scrolling to ${SCROLL_REPETITIONS} scrollable triggers (ETA ${
       (SCROLL_REPETITIONS * SCROLL_DELAY) / 1000
-    } seconds)...`
+    } seconds) ...`
   );
 
   for (let i = 0; i < SCROLL_REPETITIONS; ++i) {
@@ -363,7 +413,7 @@ async function clickIfPresent(page, queryString) {
   try {
     await page.click(queryString);
   } catch (e) {
-    console.warn(`Failed to click ${queryString}`);
+    debug(`No element matching '${queryString}' to click`);
   }
   await page.waitFor(jitter(500));
 }
@@ -381,23 +431,17 @@ async function restartBrowser(browser) {
 }
 
 async function main() {
-  console.clear();
-  console.log("=========================");
-
   const { exec, token } = await readConfig();
   browserConfig.executablePath = exec;
   authTokenCookie.value = token;
 
   const { browser, page } = await openBrowser();
   await getNewStreamers(page);
-  console.log("=========================");
-  console.log("Watching random streamers...");
   await watchRandomStreamers(browser, page);
 }
 
 async function shutdown() {
-  console.log();
-  console.log("See ya!");
+  info("See ya!");
   process.exit(0);
 }
 
