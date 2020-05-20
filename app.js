@@ -27,13 +27,12 @@ const streamers = [];
 // ========================================== CONFIG SECTION =================================================================
 const CONFIG_PATH = "config.json";
 const SCREENSHOT_FOLDER = "screenshots";
-const BASE_URL = "https://www.twitch.tv/";
+const BASE_URL = "https://www.twitch.tv";
 
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36";
 
-const STREAMERS_URL =
-  "https://www.twitch.tv/directory/game/VALORANT?tl=c2542d6d-cd10-4532-919b-3d19f30a768b";
+const STREAMERS_URL = `${BASE_URL}/directory/game/VALORANT`;
 
 const SCROLL_DELAY = 2000;
 const SCROLL_REPETITIONS = 5;
@@ -87,7 +86,7 @@ const NO_DROPS_QUERY = 'div[data-test-selector="drops-list__no-drops-default"]';
 async function hasValorantDrop(browser) {
   console.debug("Opening inventory page...");
   const page = await browser.newPage();
-  await page.goto(`${BASE_URL}inventory`, { waitUntil: "networkidle2" });
+  await page.goto(`${BASE_URL}/inventory`, { waitUntil: "networkidle2" });
   console.debug("Querying for drops ...");
   const noDropsElement = await page.$(NO_DROPS_QUERY);
   const noDrops = noDropsElement === null;
@@ -163,14 +162,14 @@ async function watchRandomStreamers(browser, page) {
     }
 
     // Choose a random streamer and watchtime
-    const chosenStreamer = streamers[getRandomInt(0, streamers.length - 1)];
+    const streamer = streamers[getRandomInt(0, streamers.length - 1)];
     const watchminutes = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES);
     const watchmillis = watchminutes * 60 * 1000;
 
     // Watch chosen streamer
     console.info();
-    console.info(`Now watching streamer: ${BASE_URL}${chosenStreamer}`);
-    await page.goto(BASE_URL + chosenStreamer, { waitUntil: "networkidle0" });
+    console.info(`Now watching streamer: ${BASE_URL}/${streamer}`);
+    await page.goto(`${BASE_URL}/${streamer}`, { waitUntil: "networkidle0" });
 
     // Remove annoying popups
     await clickIfPresent(page, COOKIE_POLICY_QUERY);
@@ -234,7 +233,7 @@ async function watchRandomStreamers(browser, page) {
     if (TAKE_SCREENSHOTS) {
       await page.waitFor(jitter(1000));
 
-      const screenshotName = `${chosenStreamer}.png`;
+      const screenshotName = `${streamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
 
       if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
@@ -375,9 +374,7 @@ async function clickIfPresent(page, queryString) {
  */
 async function restartBrowser(browser) {
   const pages = await browser.pages();
-  /**
-   * @param {puppeteer.Page} page
-   */
+  /** @param {puppeteer.Page} page */
   await Promise.all(pages.map((page) => page.close()));
   treekill(browser.process().pid, "SIGKILL");
   return await openBrowser();
