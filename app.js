@@ -2,7 +2,7 @@
 
 const puppeteer = require("puppeteer-core");
 const dayjs = require("dayjs");
-const fs = require("fs");
+const fs = require("fs").promises;
 const treekill = require("tree-kill");
 const path = require("path");
 const chalk = require("chalk");
@@ -283,8 +283,11 @@ async function watchRandomStreamers(browser, page) {
       const screenshotName = `${streamer}.png`;
       const screenshotPath = path.join(SCREENSHOT_FOLDER, screenshotName);
 
-      // FIXME: don't use the sync version of these
-      if (!fs.existsSync(SCREENSHOT_FOLDER)) fs.mkdirSync(SCREENSHOT_FOLDER);
+      // Create the screenshot folder if it does not exist
+      await fs
+        .access(SCREENSHOT_FOLDER)
+        .catch(() => fs.mkdir(SCREENSHOT_FOLDER));
+
       await page.screenshot({ path: screenshotPath });
 
       info(`Screenshot created: ${screenshotPath}`);
@@ -314,13 +317,15 @@ async function watchRandomStreamers(browser, page) {
 async function readConfig() {
   header("Config");
 
-  if (fs.existsSync(CONFIG_PATH)) {
-    success("JSON config found!");
-    return JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
-  } else {
+  try {
+    await fs.access(CONFIG_PATH);
+  } catch (e) {
     error("No config file found!");
     process.exit(1);
   }
+
+  success("JSON config found!");
+  return JSON.parse(await fs.readFile(CONFIG_PATH, "utf-8"));
 }
 
 /**
