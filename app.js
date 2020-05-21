@@ -1,5 +1,6 @@
-// @ts-check
+/* Updated version by AlexSimpler and PurpleMyst */                                                                                    
 
+// @ts-check
 const puppeteer = require("puppeteer-core");
 const dayjs = require("dayjs");
 const fs = require("fs").promises;
@@ -26,14 +27,14 @@ let run = true;
 const streamers = [];
 
 // ========================================== CONFIG SECTION =================================================================
-const CONFIG_PATH = "config.json";
+const CONFIG_PATH = "./config.json";
 const SCREENSHOT_FOLDER = "screenshots";
 const BASE_URL = "https://www.twitch.tv";
 
 const USER_AGENT =
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/78.0.3904.108 Safari/537.36";
 
-const STREAMERS_URL = `${BASE_URL}/directory/game/VALORANT`;
+const STREAMERS_URL = `${BASE_URL}/directory/game/`;
 
 const SCROLL_DELAY = 2000;
 const SCROLL_REPETITIONS = 5;
@@ -78,8 +79,78 @@ const STREAM_WORST_QUALITY_QUERY =
   '[data-a-target="player-settings-menu"] .tw-pd-05:last-child .tw-radio';
 const CHANNEL_STATUS_QUERY = ".tw-channel-status-text-indicator";
 const NO_DROPS_QUERY = 'div[data-test-selector="drops-list__no-drops-default"]';
+const DROP_INVENTORY_NAME = '[data-test-selector="drops-list__game-name"]';
+const DROP_INVENTORY_LIST = 'div.tw-flex-wrap.tw-tower.tw-tower--180.tw-tower--gutter-sm';
+const DROP_ITEM = '.tw-flex';
+const CATEGORY_NOT_FOUND = '[data-a-target="core-error-message"]';
+const DROP_STATUS = '[data-a-target="Drops Enabled"]';
 
 // ========================================== CONFIG SECTION =================================================================
+
+// ========================================== UTILS SECTION =================================================================
+/**
+* @param {Object} page
+* @param {String} query the query
+* @author AlexSimpler
+* @return 
+*/
+async function query(page, query) {
+  let bodyHTML = await page.evaluate(() => document.body.innerHTML);
+  //use cheerio server based jquery
+  //load the whole body for cheerio to operate with
+  let $ = cheerio.load(bodyHTML);
+  //defining a var for the selection
+  const jquery = $(query);
+  //returning it with some checks
+  if (!jquery)
+    throw new Error("Invalid query result");
+  return jquery;
+}
+
+/**
+* @param {Number} ms number of milliseconds to wait until the program resumes execution 
+* @author AlexSimpler
+* @return {Promise} an anonymous promise which resolves after a timeout
+*/
+function idle(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+* @param word makes the first letter of the word uppercase
+* @author AlexSimpler
+* @return the modified word
+*/
+function capitalize(word) {
+  return (word[0].toUpperCase() + word.substring(1));
+}
+
+/**
+* @param {Object} page name takes as parameters the page handler aswell as the name of the property inside twilight-user
+* @param {String} name The cookie title
+* @author AlexSimpler
+* @return {Promise<String>} the value of the cookie
+*/
+async function getUserProperty(page, name) {
+
+  if (!name || !(/^[A-Za-z1-9]+$/.test(name))) throw new Error("Invalid cookie name: ", name);
+
+  const data = await page.cookies();
+  let cookieValue = undefined;
+
+  for (let i = 0; i < data.length; i++) {
+    if (data[i].name == 'twilight-user') {
+      cookieValue = JSON.stringify((data[i].value).replace(/\%+[1-9]+/gm, ' ').replace(/\ \C\ /gm, ""));
+      cookieValue = cookieValue.replace(/"+/gm, "");
+      let reg = new RegExp(`(?<=${name}\\s\\:\\s)[a-zA-Z0-9]+`, 'gm');
+      cookieValue = cookieValue.match(reg);
+    }
+  }
+  if(!cookieValue[0])
+    throw new Error("Invalid cookie value");
+  return cookieValue[0];
+}
+// ========================================== UTILS SECTION =================================================================
 
 /**
  * @description Output an informational message
@@ -127,31 +198,60 @@ function header(message) {
 /**
  * @description Check if there are _any_ drops in the inventory page
  * @param {puppeteer.Browser} browser
+ * @param {String} game the game name
  * @returns {Promise<boolean>} Are there any drops?
  */
-async function hasValorantDrop(browser) {
+async function hasDrops(browser, game) {
   header("Dropcheck");
   debug("Opening inventory page ...");
   const page = await browser.newPage();
   await page.goto(`${BASE_URL}/inventory`, { waitUntil: "networkidle2" });
   debug("Querying for drops ...");
-  const noDropsElement = await page.$(NO_DROPS_QUERY);
-  const noDrops = noDropsElement === null;
+  
+  /* Updated by AlexSimpler */
+  let noDrops = await query(page, NO_DROPS_QUERY);
+  let received = false;
+  //if there are noDrops then length > 0
+  if (noDrops.length === 0) {
+    info("Haven't received a drop yet");
+  }
+  else {
+    //wait for some time before querying to avoid some element not found errors
+    await idle(1000);
+    
+    let count = 0;
+    let drop = await query(page, DROP_INVENTORY_LIST);
+    count = (await query(page, DROP_INVENTORY_LIST + ">" + DROP_ITEM)).length;
+
+    if (count) {
+      //just itterate through each notification and break if one drop has the name of the game name uppercase
+      for (let i = 0; i < count; i++) {
+        let game = (await query(page, `${DROP_INVENTORY_LIST + ">" + DROP_ITEM}:nth-child(${i + 1}) ${DROP_INVENTORY_NAME}`))
+          .text().toUpperCase();
+        if (game == game.toUpperCase()) {
+          received = true;
+          break;
+        }
+      }
+      await idle(1500);
+      if (received) {
+        success(`Congrats you got ${(capitalize(game))}!`);
+      }
+      else {
+       info("Haven't received a drop yet");
+      }
+    }
+  }  
   await page.close();
-  info(
-    noDrops
-      ? "Seems like we have a drop!"
-      : "Doesn't look like we got anything :("
-  );
-  return noDrops;
+  return received;
 }
 
 /**
  * @description Exit the program if we already have the Valorant drop
  * @param {puppeteer.Browser} browser
  */
-async function checkValorantDrop(browser) {
-  if (await hasValorantDrop(browser)) {
+async function checkDrops(browser, game) {
+  if (await hasDrops(browser, game)) {
     await shutdown();
   }
 }
@@ -181,20 +281,20 @@ function jitter(num) {
  * @param {puppeteer.Browser} browser The current browser instance
  * @param {puppeteer.Page} page The twitch.tv streamer page
  */
-async function watchRandomStreamers(browser, page) {
+async function watchRandomStreamers(browser, page, streamUrl, game) {
   let nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
   let nextBrowserRestart = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
 
-  // Let's check before starting if we got valorant
-  await checkValorantDrop(browser);
+  // Let's check before starting if we got the game drop
+  await checkDrops(browser, game);
 
   while (run) {
     // Are we due for a cleaning?
     if (dayjs(nextBrowserRestart).isBefore(dayjs())) {
       info("Restarting the browser ...");
 
-      // Before leaving, let's check if we got valorant
-      await checkValorantDrop(browser);
+      // Before leaving, let's check if we got the game
+      await checkDrops(browser, game);
 
       const newBrowser = await restartBrowser(browser);
       browser = newBrowser.browser;
@@ -204,7 +304,7 @@ async function watchRandomStreamers(browser, page) {
 
     // Are we due for a streamer refresh?
     if (dayjs(nextStreamerRefresh).isBefore(dayjs())) {
-      await getNewStreamers(page);
+      await getNewStreamers(page, streamUrl);
       nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
     }
 
@@ -237,24 +337,22 @@ async function watchRandomStreamers(browser, page) {
     }
 
     // Is this streamer still streaming?
-    const channelStatus = await page
-      .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent)
-      .catch(() => "");
+    const channelStatus = (await query(page, CHANNEL_STATUS_QUERY)).text().trim().toUpperCase();
     info("Channel status: " + channelStatus);
     // We use `startsWith` because sometimes we get LIVELIVE
     // Also `toUpperCase` because sometimes we get LiveLIVE
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
-    if (!channelStatus.toUpperCase().startsWith("LIVE")) {
+    if (!channelStatus.includes("LIVE")) {
       error("Streamer is offline");
       await page.waitFor(jitter(1000));
       continue;
     }
 
     // Does the streamer have drops enabled?
-    const dropsEnabled = await page
-      .$eval('[data-a-target="Drops Enabled"]', () => true)
-      .catch(() => false);
+    //Updated by AlexSimpler
+    const dropsEnabled = (await query(page, DROP_STATUS)).text();
+    
     if (!dropsEnabled) {
       error("Streamer doesn't have drops enabled");
       await page.waitFor(jitter(1000));
@@ -302,7 +400,7 @@ async function watchRandomStreamers(browser, page) {
 
     info(`Account status: ${status}`);
     info(`Time: ${dayjs().format("HH:mm:ss")}`);
-    info(`Watching stream for ${watchminutes} minutes`);
+    info(`Watching stream for ${watchminutes} minutes. ETA: ${dayjs().add((watchminutes), 'minutes').format('HH:mm:ss')}`);
 
     await page.waitFor(watchmillis);
   }
@@ -356,13 +454,21 @@ async function openBrowser() {
  * @description Refresh the list of streamers
  * @param {puppeteer.Page} page
  */
-async function getNewStreamers(page) {
+async function getNewStreamers(page, streamUrl) {
   header("Streamer Refresh");
-  await page.goto(STREAMERS_URL, { waitUntil: "networkidle0" });
+  await page.goto(streamUrl, { waitUntil: "networkidle0" });
+  
+  //was the category found?
+  const notFound = await query(page, CATEGORY_NOT_FOUND);
 
+  if (notFound.length || notFound.text() == "Category does not exist") {
+     error(`Game category not found, did you enter the game as displayed on twitch?`);
+     await shutdown();
+  }
+  
   debug("Checking login ...");
   await checkLogin(page);
-
+  
   debug("Scrolling a bit ...");
   await scroll(page);
 
@@ -381,9 +487,11 @@ async function getNewStreamers(page) {
 async function checkLogin(page) {
   const cookies = await page.cookies();
   if (cookies.findIndex((cookie) => cookie.name === "twilight-user") !== -1) {
-    success("Login successful!");
+     //get the name cookie - updated by AlexSimpler
+     const name = await getUserProperty(page, 'displayName');
+     success(`Successfully logged in as ${name}!`);
   } else {
-    error("Invalid token.");
+    error("Login failed, is your token valid?.");
     process.exit();
   }
 }
@@ -435,14 +543,16 @@ async function restartBrowser(browser) {
   return await openBrowser();
 }
 
-async function main() {
-  const { exec, token } = await readConfig();
+async function main(url) {
+  //added game - AlexSimpler
+  const { exec, token, game} = await readConfig();
   browserConfig.executablePath = exec;
   authTokenCookie.value = token;
-
+  let streamUrl = (url + game.toUpperCase());
+  
   const { browser, page } = await openBrowser();
-  await getNewStreamers(page);
-  await watchRandomStreamers(browser, page);
+  await getNewStreamers(page, streamUrl, game);
+  await watchRandomStreamers(browser, page, streamUrl, game);
 }
 
 async function shutdown() {
@@ -453,4 +563,4 @@ async function shutdown() {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
-main();
+main(STREAMERS_URL);
