@@ -1,15 +1,15 @@
 // @ts-check
 // Updated version by AlexSimpler and PurpleMyst
 
-const puppeteer = require("puppeteer-core");
-const dayjs = require("dayjs");
+import puppeteer from "puppeteer-core";
+import dayjs from "dayjs";
 const fs = require("fs").promises;
-const treekill = require("tree-kill");
-const path = require("path");
-const chalk = require("chalk");
+import treekill from "tree-kill";
+import path from "path";
+import chalk from "chalk";
 
 /** @type puppeteer.SetCookie */
-const authTokenCookie = {
+const authTokenCookie: puppeteer.SetCookie = {
   name: "auth-token",
   value: "",
 
@@ -23,8 +23,7 @@ const authTokenCookie = {
 
 let run = true;
 
-/** @type {string[]} */
-const streamers = [];
+const streamers: string[] = [];
 
 const CONFIG_PATH = "config.json";
 const SCREENSHOT_FOLDER = "screenshots";
@@ -50,7 +49,7 @@ const TAKE_SCREENSHOTS = true;
 
 const HEADER_WIDTH = 40;
 
-const browserConfig = {
+const browserConfig: puppeteer.LaunchOptions = {
   headless: !SHOW_BROWSER,
   args: [
     "--mute-audio",
@@ -84,22 +83,16 @@ const DROP_INVENTORY_LIST =
 const CATEGORY_NOT_FOUND = '[data-a-target="core-error-message"]';
 const DROP_STATUS = '[data-a-target="Drops Enabled"]';
 
-/**
- * @param {string} word makes the first letter of the word uppercase
- * @author AlexSimpler
- * @return the modified word
- */
-function capitalize(word) {
+/** @author AlexSimpler */
+function capitalize(word: string) {
   return word[0].toUpperCase() + word.substring(1);
 }
 
-/**
- * @param {puppeteer.Page} page
- * @param {string} name The property name
- * @author AlexSimpler
- * @return {Promise<string | undefined>} The value of the property in twilight-user if present
- */
-async function getUserProperty(page, name) {
+/** @author AlexSimpler */
+async function getUserProperty(
+  page: puppeteer.Page,
+  name: string
+): Promise<string | undefined> {
   const cookies = await page.cookies();
   const cookie = cookies.find((cookie) => cookie.name == "twilight-user");
   if (cookie === undefined) throw new Error("No twilight-user cookie");
@@ -107,56 +100,34 @@ async function getUserProperty(page, name) {
   return twilightUser[name];
 }
 
-/**
- * @description Output an informational message
- * @param {string} message
- */
-function info(message) {
+function info(message: string) {
   console.info(`[${chalk.blue("i")}] ${message}`);
 }
 
-/**
- * @description Indicate that something succeeded
- * @param {string} message
- */
-function success(message) {
+function success(message: string) {
   console.info(`[${chalk.green("✓")}] ${message}`);
 }
 
-/**
- * @description Output something useful only for debugging
- * @param {string} message
- */
-function debug(message) {
+function debug(message: string) {
   console.debug(`[${chalk.yellow("d")}] ${message}`);
 }
 
-/**
- * @description Indicate that something failed
- * @param {string} message
- */
-function error(message) {
+function error(message: string) {
   console.error(`[${chalk.red("✗")}] ${message}`);
 }
 
-/**
- * @description Make a big separator header
- * @param {string} message
- */
-function header(message) {
+function header(message: string) {
   const space_around = (HEADER_WIDTH - message.length) / 2;
   const equals = "=".repeat(space_around - 2);
   console.log();
   console.log(`${equals}[ ${chalk.cyan(message)} ]${equals}`);
 }
 
-/**
- * @description Check if there are _any_ drops in the inventory page
- * @param {puppeteer.Browser} browser
- * @param {string} game the game name
- * @returns {Promise<boolean>} Are there any drops?
- */
-async function hasDrops(browser, game) {
+/** Check if a game has dropped */
+async function hasDrops(
+  browser: puppeteer.Browser,
+  game: string
+): Promise<boolean> {
   header("Dropcheck");
   debug("Opening inventory page ...");
   const page = await browser.newPage();
@@ -177,7 +148,7 @@ async function hasDrops(browser, game) {
 
   // Then iterate over all the drops and see if we've got one matching our chosen one
   const drops = await page.$$eval(DROP_INVENTORY_NAME, (drops) =>
-    drops.map((drop) => drop.textContent.toUpperCase())
+    drops.map((drop) => drop.textContent?.toUpperCase() ?? "")
   );
   await page.close();
 
@@ -190,43 +161,34 @@ async function hasDrops(browser, game) {
   }
 }
 
-/**
- * @description Exit the program if we already have the game
- * @param {puppeteer.Browser} browser
- * @param {string} game
- */
-async function checkDrops(browser, game) {
+/** Exit the program if we already have the game */
+async function checkDrops(browser: puppeteer.Browser, game: string) {
   if (await hasDrops(browser, game)) {
     await shutdown();
   }
 }
 
 /**
- * @description Return a random integer in a given range
- * @param {number} min The minimum number to get, inclusive
- * @param {number} max The maximum number to get, inclusive
- * @returns {number} A random number
+ * Get a random integer in a given range
+ * @param min The minimum number to get, inclusive
+ * @param max The maximum number to get, inclusive
  */
-function getRandomInt(min, max) {
+function getRandomInt(min: number, max: number): number {
   min = Math.ceil(min);
   max = Math.floor(max);
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
-/**
- * @param {number} num The number to jitter
- * @returns {number} The number jittered by 10%
- */
-function jitter(num) {
+/** Jitter a number by 10% */
+function jitter(num: number): number {
   return num + getRandomInt(-num / 10, num / 10);
 }
 
-/**
- * @description Start watching random streamers
- * @param {puppeteer.Browser} browser The current browser instance
- * @param {puppeteer.Page} page The twitch.tv streamer page
- */
-async function watchRandomStreamers(browser, page, game) {
+async function watchRandomStreamers(
+  browser: puppeteer.Browser,
+  page: puppeteer.Page,
+  game: string
+) {
   let nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
   let nextBrowserRestart = dayjs().add(BROWSER_RESTART_INTERVAL, TIME_UNIT);
 
@@ -274,8 +236,8 @@ async function watchRandomStreamers(browser, page, game) {
         (gate) => gate.textContent
       )
       .catch(() => "");
-    const errorMatch = contentGate.match(/Error #(\d{4})/);
-    if (errorMatch !== null) {
+    const errorMatch = contentGate?.match(/Error #(\d{4})/);
+    if (errorMatch != null) {
       error("Playback error: " + errorMatch[1]);
       await page.waitFor(jitter(1000));
       continue;
@@ -287,10 +249,10 @@ async function watchRandomStreamers(browser, page, game) {
     // This is because there are two elements with that class name
     // One below the player and one "in" the player
     const channelStatus = await page
-      .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent.trim().toUpperCase())
+      .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent?.trim().toUpperCase())
       .catch(() => "Unknown");
     info("Channel status: " + channelStatus);
-    if (!channelStatus.includes("LIVE")) {
+    if (!channelStatus?.includes("LIVE")) {
       error("Streamer is offline");
       await page.waitFor(jitter(1000));
       continue;
@@ -362,7 +324,11 @@ async function watchRandomStreamers(browser, page, game) {
  * @description Read the config to get token and browser executable path
  * @returns {Promise<{exec: string, token: string, game: string}>}
  */
-async function readConfig() {
+async function readConfig(): Promise<{
+  exec: string;
+  token: string;
+  game: string;
+}> {
   header("Config");
 
   try {
@@ -388,7 +354,10 @@ async function readConfig() {
  * @description Launch a new browser instance
  * @returns {Promise<{browser: puppeteer.Browser, page: puppeteer.Page}>}
  */
-async function openBrowser() {
+async function openBrowser(): Promise<{
+  browser: puppeteer.Browser;
+  page: puppeteer.Page;
+}> {
   header("Startup");
   const browser = await puppeteer.launch(browserConfig);
   const page = await browser.newPage();
@@ -408,12 +377,7 @@ async function openBrowser() {
   return { browser, page };
 }
 
-/**
- * @description Refresh the list of streamers
- * @param {puppeteer.Page} page
- * @param {string} game
- */
-async function getNewStreamers(page, game) {
+async function getNewStreamers(page: puppeteer.Page, game: string) {
   header("Streamer Refresh");
   await page.goto(`${STREAMERS_URL}/${game}`, { waitUntil: "networkidle0" });
 
@@ -432,18 +396,16 @@ async function getNewStreamers(page, game) {
   await scroll(page);
 
   const newStreamers = await page.$$eval(CHANNELS_QUERY, (streamerLinks) =>
-    streamerLinks.map((link) => link.getAttribute("href").split("/")[1])
+    streamerLinks
+      .map((link) => link?.getAttribute("href")?.split("/")?.[1] ?? "")
+      .filter((link) => link.length !== 0)
   );
   streamers.splice(0, streamers.length, ...newStreamers);
 
   success(`Got ${streamers.length} new streamers`);
 }
 
-/**
- * @description Validate the auth token given
- * @param {puppeteer.Page} page
- */
-async function checkLogin(page) {
+async function checkLogin(page: puppeteer.Page) {
   const cookies = await page.cookies();
   if (cookies.findIndex((cookie) => cookie.name === "twilight-user") !== -1) {
     // Get the name property (updated by AlexSimpler)
@@ -455,11 +417,7 @@ async function checkLogin(page) {
   }
 }
 
-/**
- * @description Scroll to an amount of scrollable triggers
- * @param {puppeteer.Page} page
- */
-async function scroll(page) {
+async function scroll(page: puppeteer.Page) {
   info(
     `Scrolling to ${SCROLL_REPETITIONS} scrollable triggers (ETA ${
       (SCROLL_REPETITIONS * SCROLL_DELAY) / 1000
@@ -476,12 +434,7 @@ async function scroll(page) {
   }
 }
 
-/**
- * @description Click an element by its query selector if it is present in the page
- * @param {puppeteer.Page} page
- * @param {String} queryString
- */
-async function clickIfPresent(page, queryString) {
+async function clickIfPresent(page: puppeteer.Page, queryString: string) {
   try {
     await page.click(queryString);
   } catch (e) {
@@ -490,13 +443,8 @@ async function clickIfPresent(page, queryString) {
   await page.waitFor(jitter(500));
 }
 
-/**
- * @description Restart the current browser
- * @param {puppeteer.Browser} browser
- */
-async function restartBrowser(browser) {
+async function restartBrowser(browser: puppeteer.Browser) {
   const pages = await browser.pages();
-  /** @param {puppeteer.Page} page */
   await Promise.all(pages.map((page) => page.close()));
   treekill(browser.process().pid, "SIGKILL");
   return await openBrowser();
