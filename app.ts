@@ -249,10 +249,7 @@ async function watchRandomStreamers(
     }
 
     // Is this streamer still streaming?
-    // We use `startsWith` because sometimes we get LIVELIVE
-    // Also `toUpperCase` because sometimes we get LiveLIVE
-    // This is because there are two elements with that class name
-    // One below the player and one "in" the player
+    // We use `String.prototype.toUpperCase` because I've gotten "Live" instead of "LIVE" before
     const channelStatus = await page
       .$eval(CHANNEL_STATUS_QUERY, (el) => el.textContent?.trim().toUpperCase())
       .catch(() => "Unknown");
