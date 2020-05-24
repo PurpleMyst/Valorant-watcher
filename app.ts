@@ -215,6 +215,11 @@ async function watchRandomStreamers(
       nextStreamerRefresh = dayjs().add(REFRESH_INTERVAL, TIME_UNIT);
     }
 
+    if (streamers.length === 0) {
+      error("No streamers found!");
+      await shutdown();
+    }
+
     // Choose a random streamer and watchtime
     const streamer = streamers[getRandomInt(0, streamers.length - 1)];
     const watchminutes = getRandomInt(MIN_WATCH_MINUTES, MAX_WATCH_MINUTES);
@@ -428,7 +433,7 @@ async function scroll(page: puppeteer.Page) {
     await page.evaluate(async () => {
       document
         .getElementsByClassName("scrollable-trigger__wrapper")[0]
-        .scrollIntoView();
+        ?.scrollIntoView();
     });
     await page.waitFor(jitter(SCROLL_DELAY));
   }

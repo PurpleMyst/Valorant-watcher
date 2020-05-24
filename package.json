@@ -1,8 +1,7 @@
 {
   "name": "valorant-watcher",
-  "version": "2.0.4",
-  "description": "Automatic watching the twitch to get valorant drop",
-  "main": "app.js",
+  "version": "3.0.0",
+  "description": "Automaticically watch twitch.tv to get game drops",
   "scripts": {
     "start": "ts-node app"
   },
@@ -12,6 +11,7 @@
     "type": "git",
     "url": "https://github.com/D3vl0per/Valorant-watcher"
   },
+  "private": true,
   "dependencies": {
     "chalk": "^4.0.0",
     "dayjs": "^1.8.24",
