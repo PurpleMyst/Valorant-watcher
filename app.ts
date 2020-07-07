@@ -218,7 +218,7 @@ async function watchRandomStreamers(
 
     if (streamers.length === 0) {
       error("No streamers found!");
-      await shutdown();
+      await retryGetNewStreamers(page, game);
     }
 
     // Choose a random streamer and watchtime
@@ -406,6 +406,21 @@ async function getNewStreamers(page: puppeteer.Page, game: string) {
   streamers.splice(0, streamers.length, ...newStreamers);
 
   success(`Got ${streamers.length} new streamers`);
+}
+
+/**
+ * Try to get new streamers, retrying with exponential backoff if none ar efound
+ */
+async function retryGetNewStreamers(page: puppeteer.Page, game: string) {
+  // max sleep time is 10 minutes
+  const MAX_SLEEP_TIME = 10 * 60 * 1000;
+
+  for (let attempts = 0; streamers.length === 0; ++attempts) {
+    const sleepTime = jitter(Math.min((1 << attempts) * 1000, MAX_SLEEP_TIME));
+    info(`Sleeping for ${sleepTime} ms before retrying to get new streamers`);
+    await page.waitFor(sleepTime);
+    await getNewStreamers(page, game);
+  }
 }
 
 async function checkLogin(page: puppeteer.Page) {
