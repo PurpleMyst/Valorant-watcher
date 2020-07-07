@@ -1,6 +1,6 @@
 # Valorant Watcher
 
-Simple puppeteer-based node.js application which watches Valorant livestreams for you.
+Simple puppeteer-based node.js application which watches any drop-enabled livestreams for you.
 
 ## Features
 
