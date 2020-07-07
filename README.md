@@ -26,7 +26,8 @@ Simple puppeteer-based node.js application which watches Valorant livestreams fo
    ```json
    {
      "token": "{YOUR AUTH COOKIE TOKEN}",
-     "exec": "{PATH TO CHROME CANARY EXECUTABLE}"
+     "exec": "{PATH TO CHROME CANARY EXECUTABLE}",
+     "game": "{THE GAME'S NAME ON TWITCH}"
    }
    ```
 8. Run `npm install`
