@@ -44,7 +44,7 @@ const REFRESH_INTERVAL = 1;
 const BROWSER_RESTART_INTERVAL = 1;
 const TIME_UNIT = "hour";
 
-const SHOW_BROWSER = false;
+const SHOW_BROWSER = true;
 const TAKE_SCREENSHOTS = true;
 
 const HEADER_WIDTH = 40;
@@ -60,6 +60,7 @@ const browserConfig: puppeteer.LaunchOptions = {
     "--disable-gpu",
     "--no-sandbox",
     "--disable-setuid-sandbox",
+    "--no-user-gesture-required",
   ],
 };
 
@@ -429,7 +430,8 @@ async function scroll(page: puppeteer.Page) {
   for (let i = 0; i < SCROLL_REPETITIONS; ++i) {
     await page.evaluate(async () => {
       document
-        .getElementsByClassName("scrollable-trigger__wrapper")[0]
+        .getElementsByClassName("scrollable-trigger__wrapper")
+        .item(0)
         ?.scrollIntoView();
     });
     await page.waitFor(jitter(SCROLL_DELAY));
